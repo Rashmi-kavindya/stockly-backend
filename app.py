@@ -154,27 +154,65 @@ def get_sales(item_id):
 @app.route('/near_expiry', methods=['GET'])
 def get_near_expiry():
     days_threshold = int(request.args.get('days', 30))
+    include_past = request.args.get('include_past', '0') == '1'  # Optional param for past expiry
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT product_name, stock_quantity, expire_date,
-                   DATEDIFF(expire_date, CURDATE()) as days_left
-            FROM inventory 
-            WHERE expire_date >= CURDATE() AND DATEDIFF(expire_date, CURDATE()) <= %s
+        # Fixed: Added i.department to SELECT
+        date_filter = "expire_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)" if include_past else "expire_date >= CURDATE()"
+        cursor.execute(f"""
+            SELECT inv.product_name, inv.stock_quantity, inv.expire_date,
+                   i.type, i.department, DATEDIFF(expire_date, CURDATE()) as days_left,
+                   (SELECT AVG(quantity_sold) FROM sales_history sh JOIN items it ON sh.item_id = it.item_id 
+                    WHERE it.department = i.department AND sh.quantity_sold > 0 ORDER BY sh.quantity_sold DESC LIMIT 1) as top_seller_avg
+            FROM inventory inv
+            JOIN items i ON inv.product_code = i.item_code
+            WHERE {date_filter} AND DATEDIFF(expire_date, CURDATE()) <= %s
             ORDER BY expire_date ASC
         """, (days_threshold,))
         items = cursor.fetchall()
-        # Recommend discount: 10% per week left (simple rule)
-        for item in items:
-            weeks_left = item['days_left'] / 7
-            item['recommended_discount'] = max(10, 100 - int(weeks_left * 10))  # e.g., 50% if 5 weeks left
         conn.close()
+        
+        # Custom Tiered Discount Logic (same as before)
+        for item in items:
+            days_left = item['days_left']
+            base_discount = 0
+            if days_left <= 7:
+                base_discount = 70  # High urgency
+            elif days_left <= 14:
+                base_discount = 50
+            elif days_left <= 30:
+                base_discount = 30
+            else:
+                base_discount = 15  # Mild
+            
+            # Stock multiplier
+            if item['stock_quantity'] > 50:
+                base_discount += 20
+            elif item['stock_quantity'] > 20:
+                base_discount += 10
+            
+            # Type boost (perishables)
+            perishables = ['Frozen', 'Food', 'Personal Care', 'Beverages']
+            if any(p in item['type'] for p in perishables):
+                base_discount += 10
+            
+            item['recommended_discount'] = min(95, base_discount)  # Cap at 95%
+            
+            # Bundling Rec (now uses department)
+            if item['top_seller_avg']:
+                item['bundling_suggestion'] = f"Bundle with top-seller in {item['department']} (avg sales: {int(item['top_seller_avg'])} units/mo)"
+            else:
+                item['bundling_suggestion'] = "Bundle with high-demand items like Coca Cola"
+            
+            # Loyalty note
+            item['loyalty_tip'] = "Offer extra loyalty points for purchase"
+        
         return jsonify(items)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# NEW: Dead Stock API (add this route)
+# Dead Stock API (unchanged)
 @app.route('/dead_stock', methods=['GET'])
 def get_dead_stock():
     try:

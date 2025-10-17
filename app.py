@@ -8,9 +8,15 @@ import numpy as np
 import mysql.connector
 from mysql.connector import Error
 from datetime import datetime, timedelta
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, get_jwt
+import bcrypt
 
 app = Flask(__name__)
 CORS(app)
+
+# JWT Config
+app.config['JWT_SECRET_KEY'] = 'd2f93bf403766b67b1cf7dc668a06f1229cc12c60929a5cafb215f23a596baa0'  # Change this!
+jwt = JWTManager(app)
 
 # DB Connection
 def get_db_connection():
@@ -31,7 +37,73 @@ feature_columns = joblib.load('stockly_feature_columns.pkl')
 def home():
     return "Stockly API is running"
 
+@app.route('/login', methods=['POST'])
+def login():
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+
+        if not username or not password:
+            return jsonify({'error': 'Missing username or password'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+        user = cursor.fetchone()
+        conn.close()
+
+        if not user or not bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
+            return jsonify({'error': 'Invalid credentials'}), 401
+
+        # Create JWT with role
+        additional_claims = {'role': user['role']}
+        access_token = create_access_token(identity=username, additional_claims=additional_claims)
+        return jsonify({'token': access_token, 'role': user['role']})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/register', methods=['POST'])
+@jwt_required()
+def register():
+    claims = get_jwt()  # Fix: Get claims for role
+    if claims.get('role') != 'manager':
+        return jsonify({'error': 'Access denied: Managers only'}), 403
+
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        role = data.get('role', 'employee')  # Default to employee
+
+        if not username or not password:
+            return jsonify({'error': 'Missing username or password'}), 400
+
+        if role not in ['manager', 'employee']:
+            return jsonify({'error': 'Invalid role'}), 400
+
+        hashed_pw = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)",
+                       (username, hashed_pw, role))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'message': 'User created successfully'})
+
+    except Error as e:
+        if e.errno == 1062:  # Duplicate entry
+            return jsonify({'error': 'Username already exists'}), 400
+        return jsonify({'error': str(e)}), 500
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/predict_reorder', methods=['POST'])
+@jwt_required()
 def predict_reorder():
     try:
         data = request.get_json()
@@ -100,6 +172,7 @@ def get_items():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/add_inventory', methods=['POST'])
+@jwt_required()
 def add_inventory():
     try:
         data = request.get_json()
@@ -125,6 +198,7 @@ def add_inventory():
         return jsonify({'error': str(e)}), 400
 
 @app.route('/inventory', methods=['GET'])
+@jwt_required()
 def get_inventory():
     try:
         conn = get_db_connection()
@@ -137,6 +211,7 @@ def get_inventory():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/sales/<int:item_id>', methods=['GET'])
+@jwt_required()
 def get_sales(item_id):
     try:
         conn = get_db_connection()
@@ -152,6 +227,7 @@ def get_sales(item_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/near_expiry', methods=['GET'])
+@jwt_required()
 def get_near_expiry():
     days_threshold = int(request.args.get('days', 30))
     include_past = request.args.get('include_past', '0') == '1'  # Optional param for past expiry
@@ -214,6 +290,7 @@ def get_near_expiry():
 
 # Dead Stock API (unchanged)
 @app.route('/dead_stock', methods=['GET'])
+@jwt_required()
 def get_dead_stock():
     try:
         months_back = int(request.args.get('months_back', 3))  # Default: last 3 months

@@ -210,15 +210,38 @@ def get_inventory():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/sales/<int:item_id>', methods=['GET'])
+# @app.route('/sales/<int:item_id>', methods=['GET'])
+# @jwt_required()
+# def get_sales(item_id):
+#     try:
+#         conn = get_db_connection()
+#         cursor = conn.cursor(dictionary=True)
+#         cursor.execute("""
+#             SELECT month, year, quantity_sold FROM sales_history 
+#             WHERE item_id = %s ORDER BY year DESC, month DESC LIMIT 12
+#         """, (item_id,))
+#         data = cursor.fetchall()
+#         conn.close()
+#         return jsonify(data)
+#     except Exception as e:
+#         return jsonify({'error': str(e)}), 500
+
+@app.route('/inventory_sales/<int:item_id>', methods=['GET'])
 @jwt_required()
-def get_sales(item_id):
+def get_inventory_sales(item_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute("""
-            SELECT month, year, quantity_sold FROM sales_history 
-            WHERE item_id = %s ORDER BY year DESC, month DESC LIMIT 12
+            SELECT 
+                MONTH(record_date) as month, 
+                YEAR(record_date) as year, 
+                SUM(units_sold) as total_units_sold
+            FROM inventory 
+            JOIN items ON inventory.product_code = items.item_code
+            WHERE items.item_id = %s AND stock_quantity > 0  -- Exclude depleted batches
+            GROUP BY year, month 
+            ORDER BY year DESC, month DESC LIMIT 12
         """, (item_id,))
         data = cursor.fetchall()
         conn.close()

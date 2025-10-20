@@ -103,7 +103,7 @@ def login():
 
         # Create JWT with role
         additional_claims = {'role': user['role']}
-        access_token = create_access_token(identity=username, additional_claims=additional_claims)
+        access_token = create_access_token(identity=username, additional_claims=additional_claims, expires_delta=timedelta(minutes=30))
         
         # Log the action
         log_action(user['id'], username, 'login', f"User {username} logged in")

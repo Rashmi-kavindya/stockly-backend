@@ -25,7 +25,52 @@ def get_db_connection():
         database='stockly_db'
     )
 
-# Load dataset (used for feature extraction) - Keep for predict compat, but use DB for new features
+# Logging Function
+def log_action(user_id, username, action, details=None):
+    """
+    Insert a row into logs. This version:
+    - quotes column names
+    - validates inputs
+    - prints errors and query parameters for debugging
+    - always closes cursor/connection
+    """
+    if user_id is None:
+        print("Logging warning: user_id is None — skipping log.")
+        return
+    if username is None:
+        username = ''  # avoid NOT NULL problems
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        sql = "INSERT INTO `logs` (`user_id`, `username`, `action`, `details`) VALUES (%s, %s, %s, %s)"
+        params = (user_id, username, action, details)
+        cursor.execute(sql, params)
+        conn.commit()
+    except Exception as e:
+        # print full diagnostic
+        print("Logging error:", e)
+        try:
+            # debug: show what attempted to insert
+            print("Logging attempt:", sql, params)
+        except Exception:
+            pass
+    finally:
+        if cursor:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+# Load dataset (used for feature extraction) - for predict compat
 df = pd.read_csv('sri_dataset.csv')  # your dataset path
 df.fillna(0, inplace=True)
 
@@ -59,6 +104,10 @@ def login():
         # Create JWT with role
         additional_claims = {'role': user['role']}
         access_token = create_access_token(identity=username, additional_claims=additional_claims)
+        
+        # Log the action
+        log_action(user['id'], username, 'login', f"User {username} logged in")
+
         return jsonify({'token': access_token, 'role': user['role']})
 
     except Exception as e:
@@ -67,7 +116,8 @@ def login():
 @app.route('/register', methods=['POST'])
 @jwt_required()
 def register():
-    claims = get_jwt()  # Fix: Get claims for role
+    claims = get_jwt()  # Get claims for role
+    current_username = get_jwt_identity()  # This is the username (string)
     if claims.get('role') != 'manager':
         return jsonify({'error': 'Access denied: Managers only'}), 403
 
@@ -90,7 +140,18 @@ def register():
         cursor.execute("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)",
                        (username, hashed_pw, role))
         conn.commit()
+        new_user_id = cursor.lastrowid  # Not used, but available
         conn.close()
+
+        # Get current user_id for logging
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id FROM users WHERE username = %s", (current_username,))
+        current_user = cursor.fetchone()
+        conn.close()
+        
+        # Log the action
+        log_action(current_user['id'], current_username, 'register_user', f"Registered {username} as {role}")
 
         return jsonify({'message': 'User created successfully'})
 
@@ -105,6 +166,7 @@ def register():
 @app.route('/predict_reorder', methods=['POST'])
 @jwt_required()
 def predict_reorder():
+    current_username = get_jwt_identity()
     try:
         data = request.get_json()
         product_name = data.get('product_name')
@@ -151,12 +213,23 @@ def predict_reorder():
         # Predict (round to int for whole units)
         pred_qty = int(round(xgb_model.predict(sample_df)[0]))
 
+        # Get current user_id for logging
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id FROM users WHERE username = %s", (current_username,))
+        current_user = cursor.fetchone()
+        conn.close()
+        
+        # Log the action
+        log_action(current_user['id'], current_username, 'predict_reorder', f"Predicted reorder for {product_name}: {pred_qty}")
+
         return jsonify({'predicted_reorder_quantity': pred_qty})
 
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
 @app.route('/items', methods=['GET'])
+@jwt_required()
 def get_items():
     try:
         conn = get_db_connection()
@@ -174,6 +247,10 @@ def get_items():
 @app.route('/add_inventory', methods=['POST'])
 @jwt_required()
 def add_inventory():
+    claims = get_jwt()
+    current_username = get_jwt_identity()
+    if claims.get('role') != 'manager':
+        return jsonify({'error': 'Access denied: Managers only'}), 403
     try:
         data = request.get_json()
         product_code = data['product_code']
@@ -193,6 +270,17 @@ def add_inventory():
         cursor.execute(query, (product_code, product_code, supplier, batch_number, stock_quantity, expire_date, stock_quantity))
         conn.commit()
         conn.close()
+
+        # Get current user_id for logging
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id FROM users WHERE username = %s", (current_username,))
+        current_user = cursor.fetchone()
+        conn.close()
+        
+        # Log the action
+        log_action(current_user['id'], current_username, 'add_inventory', f"Added {stock_quantity} to {product_code}")
+
         return jsonify({'message': 'Inventory updated successfully'})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -209,22 +297,6 @@ def get_inventory():
         return jsonify(items)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-# @app.route('/sales/<int:item_id>', methods=['GET'])
-# @jwt_required()
-# def get_sales(item_id):
-#     try:
-#         conn = get_db_connection()
-#         cursor = conn.cursor(dictionary=True)
-#         cursor.execute("""
-#             SELECT month, year, quantity_sold FROM sales_history 
-#             WHERE item_id = %s ORDER BY year DESC, month DESC LIMIT 12
-#         """, (item_id,))
-#         data = cursor.fetchall()
-#         conn.close()
-#         return jsonify(data)
-#     except Exception as e:
-#         return jsonify({'error': str(e)}), 500
 
 @app.route('/inventory_sales/<int:item_id>', methods=['GET'])
 @jwt_required()
@@ -311,7 +383,6 @@ def get_near_expiry():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Dead Stock API (unchanged)
 @app.route('/dead_stock', methods=['GET'])
 @jwt_required()
 def get_dead_stock():

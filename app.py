@@ -453,22 +453,22 @@ def get_near_expiry():
             days_left = item['days_left']
             base_discount = 0
             if days_left <= 7:
-                base_discount = 70
+                base_discount = 40
             elif days_left <= 14:
-                base_discount = 50
+                base_discount = 20
             elif days_left <= 30:
-                base_discount = 30
+                base_discount = 10
             else:
-                base_discount = 15
+                base_discount = 5
 
             if item['stock_quantity'] > 50:
-                base_discount += 20
-            elif item['stock_quantity'] > 20:
                 base_discount += 10
+            elif item['stock_quantity'] > 20:
+                base_discount += 5
 
             perishables = ['Frozen', 'Food', 'Personal Care', 'Beverages']
             if any(p in item['type'] for p in perishables):
-                base_discount += 10
+                base_discount += 5
 
             item['recommended_discount'] = min(95, base_discount)
             item['bundling_suggestion'] = (f"Bundle with top-seller in {item['department']} (avg sales: {int(item['top_seller_avg'])} units/mo)" 

@@ -330,6 +330,25 @@ def get_items():
         return jsonify({'error': str(e)}), 500
 
 
+# ----------------------------------------------------------------------
+# Helper – get next item_code
+# ----------------------------------------------------------------------
+@app.route('/next_item_code', methods=['GET'])
+def get_next_item_code():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT COALESCE(MAX(CAST(item_code AS UNSIGNED)), 99) FROM items")
+        max_code = cur.fetchone()[0]
+        conn.close()
+        return jsonify({'next_code': str(max_code + 1)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ----------------------------------------------------------------------
+# Add new item (uses auto-generated item_code)
+# ----------------------------------------------------------------------
 @app.route('/add_item', methods=['POST'])
 @jwt_required()
 def add_item():
@@ -347,16 +366,14 @@ def add_item():
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO items
-            (item_code, item_name, department, type,
-             reorder_level, reorder_quantity)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            (item_code, item_name, department, type, reorder_level)
+            VALUES (%s, %s, %s, %s, %s)
         """, (
             data['item_code'],
             data['item_name'],
             data['department'],
             data['type'],
-            data.get('reorder_level', 10),
-            data.get('reorder_quantity', 50)
+            data.get('reorder_level', 10)
         ))
         conn.commit()
         conn.close()
@@ -368,8 +385,9 @@ def add_item():
             return jsonify({'error': 'Item code already exists'}), 400
         return jsonify({'error': str(e)}), 500
 
+
 # ----------------------------------------------------------------------
-# Inventory
+# Add inventory – expects item_id (internal)
 # ----------------------------------------------------------------------
 @app.route('/add_inventory', methods=['POST'])
 @jwt_required()
@@ -419,14 +437,17 @@ def get_inventory():
         conn = get_db_connection()
         cur = conn.cursor(dictionary=True)
         cur.execute("""
-            SELECT i.item_id, i.item_code AS product_code,
-                   i.item_name AS product_name, i.department,
-                   SUM(ib.stock_quantity) AS stock_quantity,
-                   MIN(ib.expire_date) AS expire_date,
-                   i.reorder_level
+            SELECT 
+                i.item_id,
+                i.item_code,
+                i.item_name   AS product_name,
+                i.department,
+                i.type,
+                COALESCE(SUM(ib.stock_quantity), 0) AS stock_quantity,
+                MIN(ib.expire_date)               AS expire_date,
+                i.reorder_level
             FROM items i
             LEFT JOIN inventory_batches ib ON i.item_id = ib.item_id
-            WHERE ib.stock_quantity > 0 AND ib.expire_date > CURDATE()
             GROUP BY i.item_id
             ORDER BY i.item_name
         """)

@@ -15,6 +15,9 @@ from flask_jwt_extended import (
 import mysql.connector
 from werkzeug.utils import secure_filename
 
+import requests
+from functools import lru_cache # Cache for 1 hour
+
 app = Flask(__name__)
 CORS(app)
 
@@ -723,6 +726,67 @@ def get_dead_stock():
         return jsonify(items)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    
+# Cache weather for 1 hour (avoids API spam)
+@lru_cache(maxsize=128)
+def get_weather_cached(city, timestamp=None):
+    """Fetch weather from Open-Meteo."""
+    try:
+        # Coordinates for city (hardcode for Colombo; expand later)
+        coords = {
+            'Colombo': {'lat': 6.931970, 'lon': 79.857750},  # Sri Lanka
+            'Horana': {'lat': 6.714360, 'lon': 80.0520},
+            'Padukka': {'lat': 6.843120, 'lon': 80.091346},
+        }
+        
+        if city not in coords:
+            return {'error': 'City not supported yet'}
+        
+        lat, lon = coords[city].values()
+        
+        # Open-Meteo API URL (free, 7-day forecast)
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation_probability,windspeed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Asia/Colombo&forecast_days=7"
+        
+        response = requests.get(url, timeout=5)
+        data = response.json()
+        
+        # Parse today's forecast
+        today = data['daily']['time'][0]
+        max_temp = data['daily']['temperature_2m_max'][0]
+        min_temp = data['daily']['temperature_2m_min'][0]
+        rain_prob = data['daily']['precipitation_sum'][0]
+        
+        return {
+            'city': city,
+            'date': today,
+            'max_temp': max_temp,
+            'min_temp': min_temp,
+            'rain_prob': rain_prob,
+            'suggestions': get_weather_suggestions(max_temp, rain_prob)  # Your rules
+        }
+    except Exception as e:
+        return {'error': str(e)}
+
+def get_weather_suggestions(temp, rain):
+    """Simple rules for Stockly suggestions."""
+    suggestions = []
+    if temp > 30:
+        suggestions.append("Hot day! Suggest +20% iced drinks & ice cream.")
+    elif temp < 20:
+        suggestions.append("Cool day! Promote hot soups & blankets.")
+    if rain > 5:
+        suggestions.append("Rainy! Stock up on umbrellas & raincoats (+15%).")
+    return suggestions or ["Nice weather – standard stocking."]
+
+@app.route('/weather', methods=['GET'])
+@jwt_required()
+def get_weather():
+    """Get weather & suggestions for a city."""
+    city = request.args.get('city', 'Colombo')  # Default to Colombo (Sri Lanka?)
+    weather = get_weather_cached(city)
+    if 'error' in weather:
+        return jsonify(weather), 400
+    return jsonify(weather)
 
 # ----------------------------------------------------------------------
 if __name__ == '__main__':

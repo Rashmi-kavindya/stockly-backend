@@ -315,22 +315,22 @@ def predict_reorder():
 # ----------------------------------------------------------------------
 # Items
 # ----------------------------------------------------------------------
-@app.route('/items', methods=['GET'])
-@jwt_required()
-def get_items():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor(dictionary=True)
-        cur.execute("""
-            SELECT item_id, item_code, item_name, department, type,
-                   reorder_level, reorder_quantity
-            FROM items ORDER BY department, type, item_name
-        """)
-        items = cur.fetchall()
-        conn.close()
-        return jsonify(items)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+# @app.route('/items', methods=['GET'])
+# @jwt_required()
+# def get_items():
+#     try:
+#         conn = get_db_connection()
+#         cur = conn.cursor(dictionary=True)
+#         cur.execute("""
+#             SELECT item_id, item_code, item_name, department, type,
+#                    reorder_level, reorder_quantity
+#             FROM items ORDER BY department, type, item_name
+#         """)
+#         items = cur.fetchall()
+#         conn.close()
+#         return jsonify(items)
+#     except Exception as e:
+#         return jsonify({'error': str(e)}), 500
 
 
 # ----------------------------------------------------------------------
@@ -618,6 +618,37 @@ def bulk_sales_upload():
 # ----------------------------------------------------------------------
 # Sales chart data
 # ----------------------------------------------------------------------
+
+@app.route('/items', methods=['GET'])
+@jwt_required()
+def get_items():
+    """Fetch all items for dropdowns and filtering."""
+    conn = cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT 
+                item_id, 
+                item_code, 
+                item_name, 
+                department, 
+                type, 
+                reorder_level 
+            FROM items 
+            ORDER BY item_name
+        """)
+        items = cursor.fetchall()
+        return jsonify(items)
+    except Exception as e:
+        print("Error in /items:", str(e))
+        return jsonify({"error": "Failed to fetch items", "details": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
 @app.route('/inventory_sales/<int:item_id>', methods=['GET'])
 @jwt_required()
 def get_inventory_sales(item_id):

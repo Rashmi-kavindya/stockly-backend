@@ -166,6 +166,27 @@ def register():
         return jsonify({'error': str(e)}), 500
 
 # ----------------------------------------------------------------------
+# Get all users (manager only)
+# ----------------------------------------------------------------------
+@app.route('/users', methods=['GET'])
+@jwt_required()
+def get_users():
+    claims = get_jwt()
+    if claims.get('role') != 'manager':
+        return jsonify({'error': 'Manager access only'}), 403
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT id, username, role FROM users ORDER BY id")
+        users = cur.fetchall()
+        conn.close()
+        return jsonify(users)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+        
+# ----------------------------------------------------------------------
 # Helper – upsert into sales_history
 # ----------------------------------------------------------------------
 def upsert_sales_history(item_id, code, month, year, qty_sold, rank=0):

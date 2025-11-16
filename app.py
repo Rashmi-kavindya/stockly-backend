@@ -178,14 +178,80 @@ def get_users():
     try:
         conn = get_db_connection()
         cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT id, username, role FROM users ORDER BY id")
+        cur.execute("SELECT id, username, role, created_at FROM users ORDER BY id DESC")
         users = cur.fetchall()
         conn.close()
         return jsonify(users)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-        
+# ----------------------------------------------------------------------
+# Profile
+# ----------------------------------------------------------------------
+UPLOAD_FOLDER = 'uploads/profile'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+@app.route('/upload_profile_pic', methods=['POST'])
+@jwt_required()
+def upload_profile_pic():
+    file = request.files['profile_pic']
+    filename = secure_filename(f"{get_jwt_identity()}_{file.filename}")
+    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET profile_pic = %s WHERE username = %s", (filename, get_jwt_identity()))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'filename': filename})
+
+@app.route('/uploads/profile/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+# ----------------------------------------------------------------------
+# Events (for Upcoming Events + Calendar)
+# ----------------------------------------------------------------------
+@app.route('/events', methods=['GET'])
+@jwt_required()
+def get_events():
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT id, name, date, description FROM events ORDER BY date")
+    events = cur.fetchall()
+    conn.close()
+    return jsonify(events)
+
+@app.route('/events', methods=['POST'])
+@jwt_required()
+def add_event():
+    claims = get_jwt()
+    if claims.get('role') != 'manager':
+        return jsonify({'error': 'Manager only'}), 403
+    data = request.json
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO events (name, date, description) VALUES (%s, %s, %s)",
+                (data['name'], data['date'], data['description']))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Event added'}), 201
+
+@app.route('/events/<int:id>', methods=['DELETE'])
+@jwt_required()
+def delete_event(id):
+    claims = get_jwt()
+    if claims.get('role') != 'manager':
+        return jsonify({'error': 'Manager only'}), 403
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM events WHERE id = %s", (id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Deleted'})
+
 # ----------------------------------------------------------------------
 # Helper – upsert into sales_history
 # ----------------------------------------------------------------------

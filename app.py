@@ -6,7 +6,7 @@ import numpy as np
 import joblib
 from datetime import datetime, timedelta
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_jwt_extended import (
     JWTManager, create_access_token, jwt_required,
@@ -103,7 +103,7 @@ def login():
         conn = get_db_connection()
         cur = conn.cursor(dictionary=True)
         cur.execute(
-            "SELECT id, username, password, role FROM users WHERE username = %s",
+            "SELECT id, username, password, role, profile_pic FROM users WHERE username = %s",
             (username,)
         )
         user = cur.fetchone()
@@ -124,11 +124,11 @@ def login():
             'token': token,
             'role': user['role'],
             'id': user['id'],
-            'username': user['username']
+            'username': user['username'],
+            'profile_pic': user['profile_pic']  # ← Added this
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/register', methods=['POST'])
 @jwt_required()
@@ -188,29 +188,43 @@ def get_users():
 # ----------------------------------------------------------------------
 # Profile
 # ----------------------------------------------------------------------
-UPLOAD_FOLDER = 'uploads/profile'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+UPLOAD_FOLDER = 'uploads/profile'          # ← ONLY ONE PLACE
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # ← create folder if missing
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER  # ← keep config in sync
 
 @app.route('/upload_profile_pic', methods=['POST'])
 @jwt_required()
 def upload_profile_pic():
+    if 'profile_pic' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    
     file = request.files['profile_pic']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+
+    # Generate safe filename: sara_myphoto.jpg
     filename = secure_filename(f"{get_jwt_identity()}_{file.filename}")
-    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-    
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("UPDATE users SET profile_pic = %s WHERE username = %s", (filename, get_jwt_identity()))
-    conn.commit()
-    conn.close()
-    
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    file.save(filepath)
+
+    # Save only the filename in DB (not full path)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE users SET profile_pic = %s WHERE username = %s",
+            (filename, get_jwt_identity())
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
     return jsonify({'filename': filename})
 
 @app.route('/uploads/profile/<filename>')
 def uploaded_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
+    return send_from_directory(UPLOAD_FOLDER, filename)
 # ----------------------------------------------------------------------
 # Events (for Upcoming Events + Calendar)
 # ----------------------------------------------------------------------

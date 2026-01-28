@@ -125,7 +125,7 @@ def login():
             'role': user['role'],
             'id': user['id'],
             'username': user['username'],
-            'profile_pic': user['profile_pic']  # ← Added this
+            'profile_pic': user['profile_pic']
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

@@ -289,10 +289,10 @@ def upsert_sales_history(item_id, code, month, year, qty_sold, rank=0):
             )
         else:
             cur.execute(
-                """INSERT INTO sales_history
-                   (item_id, month, year, quantity_sold, rank, code, record_date)
-                   VALUES (%s, %s, %s, %s, %s, %s, CURDATE())""",
-                (item_id, month, year, qty_sold, rank, code)
+                     """INSERT INTO sales_history
+                         (`item_id`, `month`, `year`, `quantity_sold`, `rank`, `code`, `record_date`)
+                         VALUES (%s, %s, %s, %s, %s, %s, CURDATE())""",
+                     (item_id, month, year, qty_sold, rank, code)
             )
         conn.commit()
     finally:
@@ -819,12 +819,17 @@ def predict_sales(item_id):
 
         # REAL PREDICTION
         df = pd.DataFrame(rows)
+        # Ensure numeric operations use floats (MySQL may return Decimal)
+        if 'quantity' in df.columns:
+            df['quantity'] = df['quantity'].astype(float)
         df['date'] = pd.to_datetime(df[['year', 'month']].assign(day=1))
         df = df.sort_values('date')
 
         df['ITEM NAME'] = item['item_name']
         df['item_avg_qty'] = df['quantity'].mean()
-        df['item_std_qty'] = df['quantity'].max(1)  # avoid NaN
+        df['item_std_qty'] = df['quantity'].std()
+        if pd.isna(df['item_std_qty']).any():
+            df['item_std_qty'] = df['item_std_qty'].fillna(0)
         df['prev_month_qty'] = df['quantity'].shift(1).fillna(df['quantity'].mean())
         df['rolling_3m_avg'] = df['quantity'].rolling(3, min_periods=1).mean()
 
@@ -1029,6 +1034,189 @@ def get_weather():
     if 'error' in weather:
         return jsonify(weather), 400
     return jsonify(weather)
+
+
+@app.route('/goals', methods=['GET'])
+def get_goals():
+    """Get all goals for the current user"""
+    user_id = request.headers.get('user_id')  # From JWT/auth
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT g.id, g.user_id, g.item_id, g.title, g.description, 
+               g.target, g.deadline, g.created_at, i.item_name,
+               COALESCE(SUM(st.quantity_sold), 0) as current_sales
+        FROM goals g
+        LEFT JOIN items i ON g.item_id = i.item_id
+        LEFT JOIN sales_transactions st 
+            ON g.item_id = st.item_id 
+            AND st.sale_date >= g.created_at 
+            AND st.sale_date <= CURDATE()
+        WHERE g.user_id = %s
+        GROUP BY g.id
+        ORDER BY g.deadline ASC
+    ''', (user_id,))
+    
+    columns = [desc[0] for desc in cursor.description]
+    goals = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    cursor.close()
+    conn.close()
+    
+    return jsonify(goals)
+
+@app.route('/goals', methods=['POST'])
+@jwt_required()
+def create_goal():
+    """Create a new sales goal"""
+    claims = get_jwt()
+    user_id = claims.get('id')
+    data = request.get_json()
+    
+    if not user_id:
+        return jsonify({'error': 'User not authenticated'}), 401
+    if not data.get('item_id') or not data.get('title') or not data.get('target'):
+        return jsonify({'error': 'Missing required fields: item_id, title, target'}), 400
+    
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO goals (user_id, item_id, title, description, target, deadline)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        ''', (
+            user_id,
+            data['item_id'],
+            data['title'],
+            data.get('description', ''),
+            data['target'],
+            data.get('deadline', None)
+        ))
+        conn.commit()
+        goal_id = cursor.lastrowid
+        cursor.close()
+        conn.close()
+        
+        log_action(user_id, get_jwt_identity(), 'create_goal',
+                   f"Goal: {data['title']} for item {data['item_id']}")
+        return jsonify({'id': goal_id, 'message': 'Goal created successfully'}), 201
+    except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        print(f"CREATE_GOAL ERROR: {str(e)}")
+        return jsonify({'error': 'Failed to create goal', 'details': str(e)}), 500
+
+@app.route('/goals/<int:goal_id>', methods=['PUT'])
+@jwt_required()
+def update_goal(goal_id):
+    """Update a goal"""
+    claims = get_jwt()
+    user_id = claims.get('id')
+    data = request.get_json()
+    
+    if not data.get('title') or not data.get('target'):
+        return jsonify({'error': 'Missing required fields: title, target'}), 400
+    
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE goals 
+            SET title = %s, description = %s, target = %s, deadline = %s, item_id = %s
+            WHERE id = %s AND user_id = %s
+        ''', (
+            data['title'],
+            data.get('description', ''),
+            data['target'],
+            data.get('deadline', None),
+            data['item_id'],
+            goal_id,
+            user_id
+        ))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        log_action(user_id, get_jwt_identity(), 'update_goal',
+                   f"Goal {goal_id}: {data['title']}")
+        return jsonify({'message': 'Goal updated successfully'})
+    except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        print(f"UPDATE_GOAL ERROR: {str(e)}")
+        return jsonify({'error': 'Failed to update goal', 'details': str(e)}), 500
+
+@app.route('/goals/<int:goal_id>', methods=['DELETE'])
+@jwt_required()
+def delete_goal(goal_id):
+    """Delete a goal"""
+    claims = get_jwt()
+    user_id = claims.get('id')
+    
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM goals WHERE id = %s AND user_id = %s', (goal_id, user_id))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        log_action(user_id, get_jwt_identity(), 'delete_goal', f"Goal {goal_id}")
+        return jsonify({'message': 'Goal deleted successfully'})
+    except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        print(f"DELETE_GOAL ERROR: {str(e)}")
+        return jsonify({'error': 'Failed to delete goal', 'details': str(e)}), 500
+
+@app.route('/goals/<int:goal_id>/progress', methods=['GET'])
+@jwt_required()
+def get_goal_progress(goal_id):
+    """Get real-time progress for a goal"""
+    claims = get_jwt()
+    user_id = claims.get('id')
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT g.id, g.title, g.target, g.deadline, g.item_id, i.item_name,
+               COALESCE(SUM(st.quantity_sold), 0) as current_sales,
+               CASE 
+                   WHEN g.target > 0 THEN ROUND((COALESCE(SUM(st.quantity_sold), 0) / g.target) * 100, 2)
+                   ELSE 0
+               END as progress_percentage,
+               DATEDIFF(g.deadline, CURDATE()) as days_remaining
+        FROM goals g
+        LEFT JOIN items i ON g.item_id = i.item_id
+        LEFT JOIN sales_transactions st 
+            ON g.item_id = st.item_id 
+            AND st.sale_date >= g.created_at 
+            AND st.sale_date <= CURDATE()
+        WHERE g.id = %s AND g.user_id = %s
+        GROUP BY g.id
+    ''', (goal_id, user_id))
+    
+    columns = [desc[0] for desc in cursor.description]
+    result = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    
+    if result:
+        progress = dict(zip(columns, result))
+        return jsonify(progress)
+    return jsonify({'error': 'Goal not found'}), 404
 
 # ----------------------------------------------------------------------
 if __name__ == '__main__':

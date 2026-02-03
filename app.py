@@ -43,6 +43,19 @@ def get_db_connection():
         database='stockly_db'
     )
 
+def init_db():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # Add status column to goals if not exists
+    try:
+        cur.execute("ALTER TABLE goals ADD COLUMN status VARCHAR(20) DEFAULT 'active'")
+        conn.commit()
+    except mysql.connector.Error as e:
+        if e.errno != 1060:  # Column already exists
+            print(f"Error adding status column: {e}")
+    cur.close()
+    conn.close()
+
 # ----------------------------------------------------------------------
 # Logging
 # ----------------------------------------------------------------------
@@ -624,6 +637,19 @@ def add_sale():
     upsert_sales_history(item_id, code, month, year, qty)
 
     conn.commit()
+
+    # ---- check and update completed goals ----
+    cur.execute('''
+        UPDATE goals 
+        SET status = 'completed'
+        WHERE user_id = %s AND item_id = %s AND status = 'active' AND target <= (
+            SELECT COALESCE(SUM(quantity_sold), 0)
+            FROM sales_transactions
+            WHERE item_id = goals.item_id AND user_id = goals.user_id AND sale_date >= DATE(goals.created_at)
+        )
+    ''', (claims['id'], item_id))
+    conn.commit()
+
     conn.close()
     log_action(claims['id'], get_jwt_identity(), 'add_sale',
                f"{qty} units of item_id {item_id}")
@@ -1043,15 +1069,24 @@ def get_goals():
     
     conn = get_db_connection()
     cursor = conn.cursor()
+    
+    # Update overdue goals
+    cursor.execute('''
+        UPDATE goals 
+        SET status = 'overdue'
+        WHERE user_id = %s AND status = 'active' AND deadline < CURDATE()
+    ''', (user_id,))
+    conn.commit()
+    
     cursor.execute('''
         SELECT g.id, g.user_id, g.item_id, g.title, g.description, 
-               g.target, g.deadline, g.created_at, i.item_name,
+               g.target, g.deadline, g.created_at, g.status, i.item_name,
                COALESCE(SUM(st.quantity_sold), 0) as current_sales
         FROM goals g
         LEFT JOIN items i ON g.item_id = i.item_id
         LEFT JOIN sales_transactions st 
             ON g.item_id = st.item_id 
-            AND st.sale_date >= g.created_at 
+            AND st.sale_date >= DATE(g.created_at) 
             AND st.sale_date <= CURDATE()
         WHERE g.user_id = %s
         GROUP BY g.id
@@ -1083,8 +1118,8 @@ def create_goal():
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO goals (user_id, item_id, title, description, target, deadline)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO goals (user_id, item_id, title, description, target, deadline, status)
+            VALUES (%s, %s, %s, %s, %s, %s, 'active')
         ''', (
             user_id,
             data['item_id'],
@@ -1127,7 +1162,7 @@ def update_goal(goal_id):
         cursor = conn.cursor()
         cursor.execute('''
             UPDATE goals 
-            SET title = %s, description = %s, target = %s, deadline = %s, item_id = %s
+            SET title = %s, description = %s, target = %s, deadline = %s, item_id = %s, status = %s
             WHERE id = %s AND user_id = %s
         ''', (
             data['title'],
@@ -1135,6 +1170,7 @@ def update_goal(goal_id):
             data['target'],
             data.get('deadline', None),
             data['item_id'],
+            data.get('status', 'active'),
             goal_id,
             user_id
         ))
@@ -1191,7 +1227,7 @@ def get_goal_progress(goal_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT g.id, g.title, g.target, g.deadline, g.item_id, i.item_name,
+        SELECT g.id, g.title, g.target, g.deadline, g.item_id, g.status, i.item_name,
                COALESCE(SUM(st.quantity_sold), 0) as current_sales,
                CASE 
                    WHEN g.target > 0 THEN ROUND((COALESCE(SUM(st.quantity_sold), 0) / g.target) * 100, 2)
@@ -1202,7 +1238,7 @@ def get_goal_progress(goal_id):
         LEFT JOIN items i ON g.item_id = i.item_id
         LEFT JOIN sales_transactions st 
             ON g.item_id = st.item_id 
-            AND st.sale_date >= g.created_at 
+            AND st.sale_date >= DATE(g.created_at) 
             AND st.sale_date <= CURDATE()
         WHERE g.id = %s AND g.user_id = %s
         GROUP BY g.id
@@ -1220,4 +1256,5 @@ def get_goal_progress(goal_id):
 
 # ----------------------------------------------------------------------
 if __name__ == '__main__':
+    init_db()
     app.run(debug=True)

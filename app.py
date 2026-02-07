@@ -682,10 +682,14 @@ def bulk_sales_upload():
         cur = conn.cursor()
 
         # ---- fetch item codes once ----
-        item_ids = tuple(df['item_id'].astype(int).unique())
-        placeholders = ','.join(['%s'] * len(item_ids))
-        cur.execute(f"SELECT item_id, item_code FROM items WHERE item_id IN ({placeholders})", item_ids)
-        code_map = {row[0]: row[1] for row in cur.fetchall()}
+        # Ensure we pass native Python ints to the DB driver (avoid numpy types)
+        raw_ids = df['item_id'].astype(int).unique()
+        item_ids = tuple(int(x) for x in raw_ids)
+        code_map = {}
+        if item_ids:
+            placeholders = ','.join(['%s'] * len(item_ids))
+            cur.execute(f"SELECT item_id, item_code FROM items WHERE item_id IN ({placeholders})", item_ids)
+            code_map = {row[0]: row[1] for row in cur.fetchall()}
 
         for _, row in df.iterrows():
             item_id = int(row['item_id'])

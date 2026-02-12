@@ -418,13 +418,14 @@ Just ask naturally! 😊
             elif '60' in query:
                 days = 60
             
+            # Fixed: GROUP BY must include all non-aggregated columns to comply with ONLY_FULL_GROUP_BY
             cur.execute("""
                 SELECT i.item_name, ib.expire_date, SUM(ib.stock_quantity) as stock
                 FROM inventory_batches ib
                 JOIN items i ON ib.item_id = i.item_id
                 WHERE ib.expire_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
                 AND ib.stock_quantity > 0
-                GROUP BY i.item_id
+                GROUP BY i.item_id, i.item_name, ib.expire_date
                 ORDER BY ib.expire_date ASC
             """, (days,))
             rows = cur.fetchall()

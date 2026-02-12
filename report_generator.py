@@ -88,13 +88,15 @@ class ReportGenerator:
                 ORDER BY sh.quantity_sold DESC
             """, (month_num, year))
         else:
-            # All months - group by month, create subtables
+            # All months - only current year to avoid huge reports
+            current_year = datetime.now().year
             cur.execute("""
                 SELECT i.item_name, sh.quantity_sold, sh.month, sh.year
                 FROM sales_history sh
                 JOIN items i ON sh.item_id = i.item_id
-                ORDER BY sh.year DESC, sh.month DESC, sh.quantity_sold DESC
-            """)
+                WHERE sh.year = %s
+                ORDER BY sh.month DESC, sh.quantity_sold DESC
+            """, (current_year,))
 
         rows = cur.fetchall()
         cur.close()

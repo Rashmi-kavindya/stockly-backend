@@ -564,7 +564,7 @@ Just ask naturally! 😊
         payload = {
             'type': 'report_prompt',
             'title': 'Which report do you need?',
-            'options': ['sales', 'inventory', 'stock'],
+            'options': ['sales', 'inventory'],
             'months': months
         }
 

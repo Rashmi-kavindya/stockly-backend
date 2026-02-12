@@ -113,7 +113,7 @@ class ReportGenerator:
             'CustomTitle',
             parent=styles['Heading1'],
             fontSize=16,
-            textColor=colors.HexColor('#059669'),
+            textColor=colors.HexColor('#228C8A'),
             spaceAfter=6,
             alignment=1
         )
@@ -121,7 +121,7 @@ class ReportGenerator:
             'CustomHeading',
             parent=styles['Heading2'],
             fontSize=12,
-            textColor=colors.HexColor('#059669'),
+            textColor=colors.HexColor('#228C8A'),
             spaceAfter=4,
             alignment=0
         )
@@ -144,7 +144,7 @@ class ReportGenerator:
 
                 table = Table(table_data, colWidths=[4*inch, 1.5*inch])
                 table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#059669')),
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#228C8A')),
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -183,7 +183,7 @@ class ReportGenerator:
 
                 table = Table(table_data, colWidths=[4*inch, 1.5*inch])
                 table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#059669')),
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#228C8A')),
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -243,7 +243,7 @@ class ReportGenerator:
             'CustomTitle',
             parent=styles['Heading1'],
             fontSize=16,
-            textColor=colors.HexColor('#059669'),
+            textColor=colors.HexColor('#1A69A1'),
             spaceAfter=6,
             alignment=1
         )
@@ -266,7 +266,7 @@ class ReportGenerator:
 
             table = Table(table_data, colWidths=[3.5*inch, 1.5*inch, 1.5*inch])
             table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#059669')),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A69A1')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),

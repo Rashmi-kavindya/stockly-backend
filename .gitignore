@@ -1,3 +1,9 @@
 *.csv
 *.pkl
 *.txt
+*.pyc.cpython-*
+
+__pycache__/
+*.pyc
+.env
+venv/

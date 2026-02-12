@@ -18,6 +18,8 @@ from werkzeug.utils import secure_filename
 import requests
 from functools import lru_cache # Cache for 1 hour
 
+from chat_rules import ChatRulesEngine
+
 app = Flask(__name__)
 CORS(app)
 
@@ -43,18 +45,26 @@ def get_db_connection():
         database='stockly_db'
     )
 
+chat_engine = ChatRulesEngine(get_db_connection)
+
 def init_db():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    # Add status column to goals if not exists
     try:
-        cur.execute("ALTER TABLE goals ADD COLUMN status VARCHAR(20) DEFAULT 'active'")
-        conn.commit()
-    except mysql.connector.Error as e:
-        if e.errno != 1060:  # Column already exists
-            print(f"Error adding status column: {e}")
-    cur.close()
-    conn.close()
+        conn = get_db_connection()
+        cur = conn.cursor()
+        # Add status column to goals if not exists
+        try:
+            cur.execute("ALTER TABLE goals ADD COLUMN status VARCHAR(20) DEFAULT 'active'")
+            conn.commit()
+        except mysql.connector.Error as e:
+            if e.errno != 1060:  # Column already exists
+                print(f"Error adding status column: {e}")
+        cur.close()
+        conn.close()
+        print("✅ Database initialized successfully")
+    except Exception as e:
+        print(f"⚠️  Warning: Could not initialize database: {str(e)}")
+        print("   The app will still run, but database queries will fail gracefully.")
+        print(f"   Make sure MySQL is running and 'stockly_db' database exists.")
 
 # ----------------------------------------------------------------------
 # Logging
@@ -1258,6 +1268,34 @@ def get_goal_progress(goal_id):
         return jsonify(progress)
     return jsonify({'error': 'Goal not found'}), 404
 
+
+@app.route('/chat', methods=['POST'])
+@jwt_required()
+def chat():
+    claims = get_jwt()
+    user_id = claims.get('id')
+    username = get_jwt_identity()
+    
+    try:
+        data = request.get_json()
+        if not data or 'message' not in data:
+            return jsonify({'success': False, 'error': 'Missing message field'}), 400
+        
+        user_message = data.get('message', '').strip()
+        if not user_message:
+            return jsonify({'success': False, 'error': 'Empty message'}), 400
+        
+        bot_response = chat_engine.process_query(user_message, user_id)
+        log_action(user_id, username, 'chat_query', user_message[:255])
+        
+        return jsonify({
+            'success': True,
+            'response': bot_response,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
 # ----------------------------------------------------------------------
 if __name__ == '__main__':
     init_db()

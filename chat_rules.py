@@ -146,6 +146,9 @@ Just ask naturally! 😊
     def detect_intent(self, query):
         """Detect user intent from keywords."""
         query_lower = query.lower().strip()
+        # Report generation intent
+        if any(word in query_lower for word in ['report', 'report generation', 'generate report']):
+            return 'report'
         
         # Sales intent
         if any(word in query_lower for word in ['sales', 'sold', 'revenue', 'sell', 
@@ -543,6 +546,29 @@ Just ask naturally! 😊
                 conn.close()
         
         return response
+
+    # ====================================================================
+    # REPORT PROMPT
+    # ====================================================================
+
+    def handle_report_query(self, query, user_id=None):
+        """Return a structured prompt describing available report types and months.
+
+        This returns a dict so the frontend can render a form/buttons.
+        """
+        months = [
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December', 'All'
+        ]
+
+        payload = {
+            'type': 'report_prompt',
+            'title': 'Which report do you need?',
+            'options': ['sales', 'inventory', 'stock'],
+            'months': months
+        }
+
+        return payload
     
     # ====================================================================
     # GENERAL QUERIES (UNSUPPORTED/OTHER)
@@ -592,6 +618,8 @@ Just ask naturally! 😊
         intent = self.detect_intent(query)
         
         # Route to appropriate handler
+        if intent == 'report':
+            return self.handle_report_query(query, user_id)
         if intent == 'sales':
             return self.handle_sales_query(query, user_id)
         elif intent == 'stock':

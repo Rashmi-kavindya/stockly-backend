@@ -22,6 +22,9 @@ from chat_rules import ChatRulesEngine
 from report_generator import ReportGenerator
 from io import BytesIO
 
+import requests
+from datetime import datetime, date
+
 app = Flask(__name__)
 CORS(app)
 
@@ -68,6 +71,43 @@ def init_db():
         print(f"⚠️  Warning: Could not initialize database: {str(e)}")
         print("   The app will still run, but database queries will fail gracefully.")
         print(f"   Make sure MySQL is running and 'stockly_db' database exists.")
+
+
+def fetch_sri_lanka_holidays(year: int):
+    """
+    Fetch Sri Lankan holidays from GitHub raw JSON (no API key needed).
+    Gracefully handles missing future years (404).
+    """
+    url = f"https://raw.githubusercontent.com/Dilshan-H/srilanka-holidays/main/json/{year}.json"
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code == 404:
+            print(f"Info: No holiday data yet available for year {year} (expected for future years)")
+            return []  # Return empty list instead of error
+        response.raise_for_status()
+        
+        data = response.json()
+        holidays = data if isinstance(data, list) else data.get("holidays", [])
+        
+        formatted = []
+        for idx, h in enumerate(holidays):
+            name = h.get("summary") or h.get("name") or h.get("holiday_name") or "Unknown Holiday"
+            date_str = h.get("start") or h.get("date")
+            if not date_str:
+                continue
+            
+            # Use 'start' field from the 2026.json structure (it's the actual date)
+            formatted.append({
+                "id": f"github-{year}-{idx}",
+                "name": name,
+                "date": date_str,  # "2026-01-03"
+                "description": ", ".join(h.get("categories", []))  # e.g. "Public, Bank, Poya"
+            })
+        return formatted
+
+    except requests.RequestException as e:
+        print(f"GitHub fetch issue for {year}: {e}")
+        return []
 
 # ----------------------------------------------------------------------
 # Logging
@@ -1329,7 +1369,44 @@ def generate_report():
 
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/festivals', methods=['GET'])
+@jwt_required()
+def api_festivals():
+    year_str = request.args.get('year')
+    try:
+        year = int(year_str) if year_str else datetime.now().year
+    except ValueError:
+        year = datetime.now().year
+
+    events = fetch_sri_lanka_holidays(year)
+    return jsonify(events)
+
+
+@app.route('/api/festivals/upcoming', methods=['GET'])
+@jwt_required()
+def api_festivals_upcoming():
+    today = date.today()
+    current_year = today.year
     
+    # Only fetch next year if we're close to year-end (e.g., after October)
+    fetch_next = today.month >= 10
+    
+    this_year = fetch_sri_lanka_holidays(current_year)
+    next_year = fetch_sri_lanka_holidays(current_year + 1) if fetch_next else []
+    
+    all_events = this_year + next_year
+    
+    upcoming = [
+        ev for ev in all_events
+        if datetime.fromisoformat(ev["date"]).date() >= today
+    ]
+    
+    upcoming.sort(key=lambda x: x["date"])
+    return jsonify(upcoming[:10])
+
+
 # ----------------------------------------------------------------------
 if __name__ == '__main__':
     init_db()

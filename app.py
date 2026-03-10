@@ -1122,11 +1122,14 @@ def get_weather():
 @app.route('/goals', methods=['GET'])
 def get_goals():
     """Get all goals for the current user"""
-    user_id = request.headers.get('user_id')  # From JWT/auth
-    
+    user_id = request.headers.get('user_id') or request.args.get('user_id')
+
+    if not user_id:
+        return jsonify({'error': 'Missing user_id in header or query param'}), 400
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     # Update overdue goals
     cursor.execute('''
         UPDATE goals 
@@ -1134,7 +1137,7 @@ def get_goals():
         WHERE user_id = %s AND status = 'active' AND deadline < CURDATE()
     ''', (user_id,))
     conn.commit()
-    
+
     cursor.execute('''
         SELECT g.id, g.user_id, g.item_id, g.title, g.description, 
                g.target, g.deadline, g.created_at, g.status, i.item_name,
@@ -1149,14 +1152,13 @@ def get_goals():
         GROUP BY g.id
         ORDER BY g.deadline ASC
     ''', (user_id,))
-    
+
     columns = [desc[0] for desc in cursor.description]
     goals = [dict(zip(columns, row)) for row in cursor.fetchall()]
     cursor.close()
     conn.close()
-    
-    return jsonify(goals)
 
+    return jsonify(goals)
 @app.route('/goals', methods=['POST'])
 @jwt_required()
 def create_goal():

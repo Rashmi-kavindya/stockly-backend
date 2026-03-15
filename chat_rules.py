@@ -257,77 +257,68 @@ Just ask naturally! 😊
         try:
             conn = self.get_db_connection()
             cur = conn.cursor(dictionary=True)
-            # Last month sales
-            if 'last month' in query.lower() or 'previous month' in query.lower():
-                item = self.find_item_by_name(query)
-                if item:
-                    cur.execute("""
-                        SELECT i.item_name, sh.quantity_sold, sh.month, sh.year
-                        FROM sales_history sh
-                        JOIN items i ON sh.item_id = i.item_id
-                        WHERE sh.item_id = %s
-                        AND sh.month = MONTH(DATE_SUB(NOW(), INTERVAL 1 MONTH))
-                        AND sh.year = YEAR(DATE_SUB(NOW(), INTERVAL 1 MONTH))
-                    """, (item['item_id'],))
-                    row = cur.fetchone()
-                    if row:
-                        response = f"📊 **{row['item_name']}** - Last month sales: **{row['quantity_sold']} units** ({row['month']}/{row['year']})"
-                    else:
-                        response = f"❌ No sales data for **{item['item_name']}** last month."
+            query_lower = query.lower()
+            now = datetime.now()
+
+            # Determine target month/year
+            if 'last month' in query_lower or 'previous month' in query_lower:
+                if now.month == 1:
+                    target_month = 12
+                    target_year = now.year - 1
                 else:
-                    cur.execute("""
-                        SELECT i.item_name, sh.quantity_sold, sh.month, sh.year
-                        FROM sales_history sh
-                        JOIN items i ON sh.item_id = i.item_id
-                        WHERE sh.month = MONTH(DATE_SUB(NOW(), INTERVAL 1 MONTH))
-                        AND sh.year = YEAR(DATE_SUB(NOW(), INTERVAL 1 MONTH))
-                        ORDER BY sh.quantity_sold DESC
-                        LIMIT 10
-                    """)
-                    rows = cur.fetchall()
-                    if rows:
-                        response = f"📊 **Last month top sales (Top 10):**\n" + "\n".join(
-                            [f"  • {i+1}. {r['item_name']}: **{r['quantity_sold']} units**" for i, r in enumerate(rows)]
-                        )
-                    else:
-                        response = "❌ No sales data for last month."
-            
-            # Specific item sales
-            elif any(word in query.lower() for word in ['for', 'of']):
-                item = self.find_item_by_name(query)
-                if item:
-                    cur.execute("""
-                        SELECT SUM(sh.quantity_sold) as total, COUNT(*) as months
-                        FROM sales_history sh
-                        WHERE sh.item_id = %s
-                    """, (item['item_id'],))
-                    row = cur.fetchone()
-                    total = row['total'] or 0
-                    months = row['months'] or 0
-                    response = f"📊 **{item['item_name']}** - Total sales: **{total} units** across **{months} months** (Avg: {total/max(months,1):.1f}/month)"
+                    target_month = now.month - 1
+                    target_year = now.year
+                label = 'Last month'
+            else:
+                # Default to current month
+                target_month = now.month
+                target_year = now.year
+                label = 'This month'
+
+            item = self.find_item_by_name(query)
+
+            # Specific item sales (current/last month only)
+            if item:
+                cur.execute("""
+                    SELECT i.item_name, COALESCE(SUM(sh.quantity_sold), 0) as total
+                    FROM sales_history sh
+                    JOIN items i ON sh.item_id = i.item_id
+                    WHERE sh.item_id = %s AND sh.month = %s AND sh.year = %s
+                    GROUP BY i.item_name
+                """, (item['item_id'], target_month, target_year))
+                row = cur.fetchone()
+                total = row['total'] if row else 0
+                if total > 0:
+                    response = (
+                        f"Sales for {item['item_name']} - {label}: "
+                        f"{total} units ({target_month}/{target_year})"
+                    )
                 else:
-                    response = "❌ Item not found. Try asking with a product name like 'Coca Cola', 'Pencil', 'Soap', etc."
-            
-            # Top selling items
+                    response = f"No sales data for {item['item_name']} in {target_month}/{target_year}."
+
+            # Top selling items for target month
             else:
                 cur.execute("""
                     SELECT i.item_name, SUM(sh.quantity_sold) as total
                     FROM sales_history sh
                     JOIN items i ON sh.item_id = i.item_id
+                    WHERE sh.month = %s AND sh.year = %s
                     GROUP BY sh.item_id
                     ORDER BY total DESC
-                    LIMIT 5
-                """)
+                    LIMIT 10
+                """, (target_month, target_year))
                 rows = cur.fetchall()
                 if rows:
-                    response = "🏆 **Top 5 best-selling products:**\n" + "\n".join(
-                        [f"  • {i+1}. {r['item_name']}: **{r['total']} units**" for i, r in enumerate(rows)]
+                    response = (
+                        f"{label} top sales (Top 10):\n" + "\n".join(
+                            [f"  - {i+1}. {r['item_name']}: {r['total']} units" for i, r in enumerate(rows)]
+                        )
                     )
                 else:
-                    response = "❌ No sales data available yet."
+                    response = f"No sales data for {target_month}/{target_year}."
         
         except Exception as e:
-            response = f"❌ Error retrieving sales data: {str(e)}"
+            response = f"Error retrieving sales data: {str(e)}"
         
         finally:
             if cur:

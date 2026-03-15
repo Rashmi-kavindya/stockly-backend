@@ -53,11 +53,9 @@ class ReportGenerator:
         current_month = now.month
         current_year = now.year
 
-        # If selected month is in the past, use previous year
-        if month_num < current_month:
-            year = current_year - 1
-        else:
-            year = current_year
+        # Use current year by default. If you need previous years, pass a year explicitly
+        # from the UI or extend this method to parse a year from input.
+        year = current_year
 
         return month_num, year
 

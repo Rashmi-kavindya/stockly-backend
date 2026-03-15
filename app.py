@@ -24,6 +24,47 @@ from io import BytesIO
 
 import requests
 from datetime import datetime, date
+from dotenv import load_dotenv
+
+try:
+    from groq import Groq
+except Exception:
+    Groq = None
+
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+
+if Groq is None:
+    print("Groq SDK not installed. AI fallback disabled.")
+elif not GROQ_API_KEY:
+    print("GROQ_API_KEY not set. AI fallback disabled.")
+
+DEFAULT_CHAT_FALLBACK = (
+    "❓ I'm here to help with inventory data! Try asking about:\n"
+    "  • Sales analytics\n"
+    "  • Stock levels\n"
+    "  • Expiry alerts\n"
+    "  • Goals & targets\n"
+    "  • Dead stock analysis\n\n"
+    "Or type 'help' for more options."
+)
+
+def get_ai_response(prompt):
+    """Fallback to Groq AI for open-ended queries."""
+    if not GROQ_API_KEY or Groq is None:
+        return None
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+        chat_completion = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model=GROQ_MODEL,
+        )
+        return str(chat_completion.choices[0].message.content).strip()
+    except Exception as e:
+        print("Groq error:", e)
+        return None
 
 app = Flask(__name__)
 CORS(app)
@@ -1331,6 +1372,9 @@ def chat():
             return jsonify({'success': False, 'error': 'Empty message'}), 400
         
         bot_response = chat_engine.process_query(user_message, user_id)
+        if bot_response is None:
+            ai_response = get_ai_response(user_message)
+            bot_response = ai_response if ai_response else DEFAULT_CHAT_FALLBACK
         log_action(user_id, username, 'chat_query', user_message[:255])
         
         return jsonify({

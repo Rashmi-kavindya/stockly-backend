@@ -576,7 +576,8 @@ Just ask naturally! 😊
     
     def handle_general_query(self, query):
         """Handle general queries not related to database."""
-        return "❓ I'm here to help with inventory data! Try asking about:\n  • Sales analytics\n  • Stock levels\n  • Expiry alerts\n  • Goals & targets\n  • Dead stock analysis\n\nOr type 'help' for more options."
+        # Return None to signal "no rule/db match" so caller can fall back to AI.
+        return None
     
     # ====================================================================
     # MAIN HANDLER

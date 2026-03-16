@@ -19,11 +19,19 @@ import requests
 from functools import lru_cache # Cache for 1 hour
 
 from chat_rules import ChatRulesEngine
+from bundling import (
+    get_top_sellers_by_department,
+    get_top_sellers_by_type,
+    get_top_sellers_global,
+    build_bundle_candidates,
+)
 from report_generator import ReportGenerator
 from io import BytesIO
 
 import requests
 from datetime import datetime, date
+import traceback
+from werkzeug.exceptions import HTTPException
 from dotenv import load_dotenv
 
 try:
@@ -68,6 +76,14 @@ def get_ai_response(prompt):
 
 app = Flask(__name__)
 CORS(app)
+
+# Global error handler to surface 500s during development
+@app.errorhandler(Exception)
+def handle_exception(e):
+    if isinstance(e, HTTPException):
+        return e
+    print("UNHANDLED EXCEPTION:\n", traceback.format_exc())
+    return jsonify({'error': str(e)}), 500
 
 # ----------------------------------------------------------------------
 # Config
@@ -663,6 +679,10 @@ def get_inventory():
             ORDER BY i.item_name
         """)
         items = cur.fetchall()
+
+        dept_top = get_top_sellers_by_department(conn, months_back=3, limit=3)
+        type_top = get_top_sellers_by_type(conn, months_back=3, limit=3)
+        global_top = get_top_sellers_global(conn, months_back=3, limit=5)
         conn.close()
         return jsonify(items)
     except Exception as e:
@@ -1019,6 +1039,7 @@ def predict_sales(item_id):
 def get_near_expiry():
     days = int(request.args.get('days', 30))
     include_past = request.args.get('include_past', '0') == '1'
+    sales_months_back = int(request.args.get('sales_months_back', 3))
     try:
         conn = get_db_connection()
         cur = conn.cursor(dictionary=True)
@@ -1038,6 +1059,10 @@ def get_near_expiry():
             ORDER BY ib.expire_date ASC
         """, (days,))
         items = cur.fetchall()
+
+        dept_top = get_top_sellers_by_department(conn, months_back=sales_months_back, limit=3)
+        type_top = get_top_sellers_by_type(conn, months_back=sales_months_back, limit=3)
+        global_top = get_top_sellers_global(conn, months_back=sales_months_back, limit=5)
         conn.close()
 
         for itm in items:
@@ -1052,14 +1077,25 @@ def get_near_expiry():
             if any(p in itm['type'] for p in ['Frozen','Food','Personal Care','Beverages']):
                 disc += 5
             itm['recommended_discount'] = min(95, disc)
-            itm['bundling_suggestion'] = (
-                f"Bundle with top-seller in {itm['department']} "
-                f"(avg sales: {int(itm['top_seller_avg'])} units/mo)"
-                if itm['top_seller_avg'] else "Bundle with high-demand items"
+            candidates = build_bundle_candidates(
+                itm.get('product_name'),
+                itm.get('department'),
+                itm.get('type'),
+                dept_top,
+                type_top,
+                global_top,
+                limit=2,
             )
+            if candidates:
+                itm['bundling_suggestion'] = f"Bundle with: {', '.join(candidates[:2])}"
+                itm['bundle_with'] = candidates[:2]
+            else:
+                itm['bundling_suggestion'] = "Bundle with high-demand items"
+                itm['bundle_with'] = []
             itm['loyalty_tip'] = "Offer extra loyalty points for purchase"
         return jsonify(items)
     except Exception as e:
+        print("DEAD_STOCK ERROR:", e)
         return jsonify({'error': str(e)}), 500
 
 
@@ -1073,7 +1109,7 @@ def get_dead_stock():
         conn = get_db_connection()
         cur = conn.cursor(dictionary=True)
         cur.execute("""
-            SELECT i.item_id, i.item_name, i.item_code AS product_code,
+            SELECT i.item_id, i.item_name, i.item_code AS product_code, i.department, i.type,
                    SUM(ib.stock_quantity) AS stock_quantity,
                    MIN(ib.expire_date) AS expire_date,
                    COALESCE(SUM(st.quantity_sold),0) AS recent_sales
@@ -1086,6 +1122,9 @@ def get_dead_stock():
             ORDER BY recent_sales ASC, stock_quantity DESC
         """, (months, high, low))
         items = cur.fetchall()
+        dept_top = get_top_sellers_by_department(conn, months_back=months, limit=3)
+        type_top = get_top_sellers_by_type(conn, months_back=months, limit=3)
+        global_top = get_top_sellers_global(conn, months_back=months, limit=5)
         conn.close()
         for itm in items:
             if itm['stock_quantity'] > 100:
@@ -1094,6 +1133,22 @@ def get_dead_stock():
                 itm['recommendation'] = 'Obsolete: Consider removal or bundling with popular items'
             else:
                 itm['recommendation'] = f'Recommend {int((low - itm["recent_sales"])*0.5)}% discount or bundle promotion'
+            
+            candidates = build_bundle_candidates(
+                itm.get('item_name'),
+                itm.get('department'),
+                itm.get('type'),
+                dept_top,
+                type_top,
+                global_top,
+                limit=2,
+            )
+            if candidates:
+                itm['bundling_suggestion'] = f"Bundle with: {', '.join(candidates[:2])}"
+                itm['bundle_with'] = candidates[:2]
+            else:
+                itm['bundling_suggestion'] = "Bundle with high-demand items"
+                itm['bundle_with'] = []
         return jsonify(items)
     except Exception as e:
         return jsonify({'error': str(e)}), 500

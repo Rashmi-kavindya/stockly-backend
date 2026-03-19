@@ -14,6 +14,28 @@ from reportlab.lib import colors
 import mysql.connector
 
 
+THEMES = {
+    "sales": {
+        "primary": colors.HexColor("#E87E2C"),      # header bar
+        "primary_dark": colors.HexColor("#BC5D15"), # titles
+    },
+    "inventory": {
+        "primary": colors.HexColor("#EFA56C"),      # header bar
+        "primary_dark": colors.HexColor("#934910"), # titles
+    },
+    "all_months": {
+        "primary": colors.HexColor("#EA8B43"),      # header bar
+        "primary_dark": colors.HexColor("#BC5D15"), # titles
+    },
+    "table": {
+        "accent": colors.HexColor("#D1D5DB"),       # grid
+        "row_light": colors.white,                  # stripe 1
+        "row_alt": colors.HexColor("#F3F4F6"),      # stripe 2
+        "total_bg": colors.HexColor("#E5E7EB"),     # totals row
+    },
+}
+
+
 class ReportGenerator:
     """Generate PDF reports for sales and inventory data."""
 
@@ -107,11 +129,15 @@ class ReportGenerator:
 
         # Styles
         styles = getSampleStyleSheet()
+        sales_theme = THEMES["sales"]
+        all_months_theme = THEMES["all_months"]
+        table_theme = THEMES["table"]
+
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=styles['Heading1'],
             fontSize=16,
-            textColor=colors.HexColor('#228C8A'),
+            textColor=sales_theme["primary_dark"],
             spaceAfter=6,
             alignment=1
         )
@@ -119,7 +145,7 @@ class ReportGenerator:
             'CustomHeading',
             parent=styles['Heading2'],
             fontSize=12,
-            textColor=colors.HexColor('#228C8A'),
+            textColor=all_months_theme["primary_dark"],
             spaceAfter=4,
             alignment=0
         )
@@ -142,16 +168,16 @@ class ReportGenerator:
 
                 table = Table(table_data, colWidths=[4*inch, 1.5*inch])
                 table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#228C8A')),
+                    ('BACKGROUND', (0, 0), (-1, 0), sales_theme["primary"]),
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                     ('FONTSIZE', (0, 0), (-1, 0), 11),
                     ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                    ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
+                    ('BACKGROUND', (0, -1), (-1, -1), table_theme["total_bg"]),
                     ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                    ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f3f4f6')]),
+                    ('GRID', (0, 0), (-1, -1), 1, table_theme["accent"]),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -2), [table_theme["row_light"], table_theme["row_alt"]]),
                 ]))
                 story.append(table)
             else:
@@ -181,16 +207,16 @@ class ReportGenerator:
 
                 table = Table(table_data, colWidths=[4*inch, 1.5*inch])
                 table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#228C8A')),
+                    ('BACKGROUND', (0, 0), (-1, 0), all_months_theme["primary"]),
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                     ('FONTSIZE', (0, 0), (-1, 0), 10),
                     ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-                    ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
+                    ('BACKGROUND', (0, -1), (-1, -1), table_theme["total_bg"]),
                     ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                    ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f3f4f6')]),
+                    ('GRID', (0, 0), (-1, -1), 1, table_theme["accent"]),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -2), [table_theme["row_light"], table_theme["row_alt"]]),
                 ]))
                 story.append(table)
                 story.append(Spacer(1, 0.3*inch))
@@ -237,11 +263,14 @@ class ReportGenerator:
 
         # Styles
         styles = getSampleStyleSheet()
+        inventory_theme = THEMES["inventory"]
+        table_theme = THEMES["table"]
+
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=styles['Heading1'],
             fontSize=16,
-            textColor=colors.HexColor('#1A69A1'),
+            textColor=inventory_theme["primary_dark"],
             spaceAfter=6,
             alignment=1
         )
@@ -264,16 +293,16 @@ class ReportGenerator:
 
             table = Table(table_data, colWidths=[3.5*inch, 1.5*inch, 1.5*inch])
             table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A69A1')),
+                ('BACKGROUND', (0, 0), (-1, 0), inventory_theme["primary"]),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 11),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
+                ('BACKGROUND', (0, -1), (-1, -1), table_theme["total_bg"]),
                 ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f3f4f6')]),
+                ('GRID', (0, 0), (-1, -1), 1, table_theme["accent"]),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -2), [table_theme["row_light"], table_theme["row_alt"]]),
             ]))
             story.append(table)
         else:

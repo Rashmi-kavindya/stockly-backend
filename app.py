@@ -389,6 +389,28 @@ def delete_event(id):
     conn.close()
     return jsonify({'message': 'Deleted'})
 
+@app.route('/events/<int:id>', methods=['PUT'])
+@jwt_required()
+def update_event(id):
+    claims = get_jwt()
+    if claims.get('role') != 'manager':
+        return jsonify({'error': 'Manager only'}), 403
+    data = request.get_json() or {}
+    name = data.get('name')
+    date_val = data.get('date')
+    description = data.get('description', '')
+    if not name or not date_val:
+        return jsonify({'error': 'Missing required fields: name, date'}), 400
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE events SET name = %s, date = %s, description = %s WHERE id = %s",
+        (name, date_val, description, id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Event updated'})
+
 # ----------------------------------------------------------------------
 # Helper – upsert into sales_history
 # ----------------------------------------------------------------------

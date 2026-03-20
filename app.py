@@ -696,7 +696,10 @@ def get_inventory():
                 MIN(ib.expire_date)               AS expire_date,
                 i.reorder_level
             FROM items i
-            LEFT JOIN inventory_batches ib ON i.item_id = ib.item_id
+            LEFT JOIN inventory_batches ib
+              ON i.item_id = ib.item_id
+             AND ib.stock_quantity > 0
+             AND ib.expire_date >= CURDATE()
             GROUP BY i.item_id
             ORDER BY i.item_name
         """)

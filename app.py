@@ -191,10 +191,10 @@ def log_action(user_id, username, action, details=None):
             conn.close()
 
 # ----------------------------------------------------------------------
-# Load RF model (once at start-up)
+# Load XGB model (once at start-up)
 # ----------------------------------------------------------------------
-rf_model = joblib.load('rf_model.pkl')
-feature_columns = joblib.load('rf_feature_columns.pkl')
+model = joblib.load('model.pkl')
+feature_columns = joblib.load('feature_columns.pkl')
 
 # ----------------------------------------------------------------------
 # File upload helpers
@@ -445,7 +445,7 @@ def upsert_sales_history(item_id, code, month, year, qty_sold, rank=0):
         conn.close()
 
 # ----------------------------------------------------------------------
-# Predict reorder (RF + DB)
+# Predict reorder (XGB + DB)
 # ----------------------------------------------------------------------
 @app.route('/predict_reorder', methods=['POST'])
 @jwt_required()
@@ -548,7 +548,7 @@ def predict_reorder():
         X_new = df_new[feature_columns]
 
         # ----- predict -----
-        pred = int(rf_model.predict(X_new)[0])
+        pred = int(model.predict(X_new)[0])
 
         log_action(claims['id'], username, 'predict_reorder',
                    f"{product_name} → {month}/{year}: {pred}")
@@ -1032,7 +1032,7 @@ def predict_sales(item_id):
                     X_new[col] = 0
             X_new = X_new.reindex(columns=feature_columns, fill_value=0)
 
-            pred = int(rf_model.predict(X_new)[0])
+            pred = int(model.predict(X_new)[0])
             pred = max(50, pred)  # no negative
 
             forecasts.append({

@@ -1201,19 +1201,36 @@ def get_weather_cached(city, timestamp=None):
         response = requests.get(url, timeout=5)
         data = response.json()
         
-        # Parse today's forecast
-        today = data['daily']['time'][0]
-        max_temp = data['daily']['temperature_2m_max'][0]
-        min_temp = data['daily']['temperature_2m_min'][0]
-        rain_prob = data['daily']['precipitation_sum'][0]
-        
+        daily = data.get('daily', {})
+        times = daily.get('time', [])
+        max_t = daily.get('temperature_2m_max', [])
+        min_t = daily.get('temperature_2m_min', [])
+        rain = daily.get('precipitation_sum', [])
+
+        daily_forecast = []
+        for i in range(min(len(times), len(max_t), len(min_t), len(rain))):
+            day = {
+                'date': times[i],
+                'max_temp': max_t[i],
+                'min_temp': min_t[i],
+                'rain_mm': rain[i],
+                'suggestions': get_weather_suggestions(max_t[i], rain[i])
+            }
+            daily_forecast.append(day)
+
+        # Backward-compatible summary (today)
+        today = daily_forecast[0] if daily_forecast else {
+            'date': None, 'max_temp': None, 'min_temp': None, 'rain_mm': None, 'suggestions': []
+        }
+
         return {
             'city': city,
-            'date': today,
-            'max_temp': max_temp,
-            'min_temp': min_temp,
-            'rain_prob': rain_prob,
-            'suggestions': get_weather_suggestions(max_temp, rain_prob)  # Your rules
+            'daily': daily_forecast,  # 7-day forecast
+            'date': today['date'],
+            'max_temp': today['max_temp'],
+            'min_temp': today['min_temp'],
+            'rain_prob': today['rain_mm'],
+            'suggestions': today['suggestions']
         }
     except Exception as e:
         return {'error': str(e)}

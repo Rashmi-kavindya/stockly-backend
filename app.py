@@ -239,7 +239,7 @@ def login():
         token = create_access_token(
             identity=username,
             additional_claims={'role': user['role'], 'id': user['id']},
-            expires_delta=timedelta(minutes=30)
+            expires_delta=timedelta(minutes=60)
         )
         log_action(user['id'], username, 'login',
                    f"User {username} logged in")

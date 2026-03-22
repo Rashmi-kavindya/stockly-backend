@@ -311,7 +311,7 @@ Just ask naturally! 😊
                 if rows:
                     response = (
                         f"{label} top sales (Top 10):\n" + "\n".join(
-                            [f"  - {i+1}. {r['item_name']}: {r['total']} units" for i, r in enumerate(rows)]
+                            [f"{i+1}. {r['item_name']}: {r['total']} units" for i, r in enumerate(rows)]
                         )
                     )
                 else:
@@ -467,7 +467,9 @@ Just ask naturally! 😊
                            END as progress
                     FROM goals g
                     LEFT JOIN items i ON g.item_id = i.item_id
-                    LEFT JOIN sales_history st ON g.item_id = st.item_id 
+                    LEFT JOIN sales_transactions st ON g.item_id = st.item_id
+                        AND st.sale_date >= DATE(g.created_at)
+                        AND st.sale_date <= CURDATE()
                     WHERE g.user_id = %s
                     GROUP BY g.id
                     ORDER BY g.deadline ASC

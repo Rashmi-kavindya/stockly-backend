@@ -10,3 +10,4 @@ venv/
 
 script.py
 migrate_csv.py
+test_chat.py

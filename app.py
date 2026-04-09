@@ -77,7 +77,7 @@ def get_ai_response(prompt):
 app = Flask(__name__)
 CORS(app)
 
-# Global error handler to surface 500s during development
+# Global error handler to surface 500s
 @app.errorhandler(Exception)
 def handle_exception(e):
     if isinstance(e, HTTPException):
@@ -114,27 +114,20 @@ def init_db():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        # Add status column to goals if not exists
         try:
             cur.execute("ALTER TABLE goals ADD COLUMN status VARCHAR(20) DEFAULT 'active'")
             conn.commit()
         except mysql.connector.Error as e:
-            if e.errno != 1060:  # Column already exists
-                print(f"Error adding status column: {e}")
+            if e.errno != 1060:
+                pass
         cur.close()
         conn.close()
-        print("✅ Database initialized successfully")
+        print("Database initialized successfully")
     except Exception as e:
-        print(f"⚠️  Warning: Could not initialize database: {str(e)}")
-        print("   The app will still run, but database queries will fail gracefully.")
-        print(f"   Make sure MySQL is running and 'stockly_db' database exists.")
-
+        print(f"Could not initialize database: {str(e)}")
+        
 
 def fetch_sri_lanka_holidays(year: int):
-    """
-    Fetch Sri Lankan holidays from GitHub raw JSON (no API key needed).
-    Gracefully handles missing future years (404).
-    """
     url = f"https://raw.githubusercontent.com/Dilshan-H/srilanka-holidays/main/json/{year}.json"
     try:
         response = requests.get(url, timeout=5)
@@ -153,12 +146,11 @@ def fetch_sri_lanka_holidays(year: int):
             if not date_str:
                 continue
             
-            # Use 'start' field from the 2026.json structure (it's the actual date)
             formatted.append({
                 "id": f"github-{year}-{idx}",
                 "name": name,
-                "date": date_str,  # "2026-01-03"
-                "description": ", ".join(h.get("categories", []))  # e.g. "Public, Bank, Poya"
+                "date": date_str,
+                "description": ", ".join(h.get("categories", []))
             })
         return formatted
 
@@ -311,9 +303,9 @@ def get_users():
 # ----------------------------------------------------------------------
 # Profile
 # ----------------------------------------------------------------------
-UPLOAD_FOLDER = 'uploads/profile'          # ← ONLY ONE PLACE
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # ← create folder if missing
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER  # ← keep config in sync
+UPLOAD_FOLDER = 'uploads/profile'      
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # create folder if missing
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER  # keep config in sync
 
 @app.route('/upload_profile_pic', methods=['POST'])
 @jwt_required()
@@ -330,7 +322,7 @@ def upload_profile_pic():
     filepath = os.path.join(UPLOAD_FOLDER, filename)
     file.save(filepath)
 
-    # Save only the filename in DB (not full path)
+    # Save only the filename in DB
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -456,7 +448,7 @@ def predict_reorder():
     try:
         data = request.get_json()
         product_name = data.get('product_name')
-        month = data.get('month')               # optional
+        month = data.get('month')
         type_val = data.get('type')
         department_val = data.get('department')
 
@@ -502,7 +494,7 @@ def predict_reorder():
         df['ITEM NAME'] = product_name
         df = df.sort_values(['year', 'month'])
 
-        # ----- feature engineering (exact replica of notebook) -----
+        # ----- feature engineering -----
         df['item_avg_qty'] = df.groupby('ITEM NAME')['quantity'].transform('mean')
         df['item_std_qty'] = df.groupby('ITEM NAME')['quantity'].transform('std')
         df['prev_month_qty'] = df.groupby('ITEM NAME')['quantity'].shift(1).fillna(0)
@@ -557,26 +549,6 @@ def predict_reorder():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-# ----------------------------------------------------------------------
-# Items
-# ----------------------------------------------------------------------
-# @app.route('/items', methods=['GET'])
-# @jwt_required()
-# def get_items():
-#     try:
-#         conn = get_db_connection()
-#         cur = conn.cursor(dictionary=True)
-#         cur.execute("""
-#             SELECT item_id, item_code, item_name, department, type,
-#                    reorder_level, reorder_quantity
-#             FROM items ORDER BY department, type, item_name
-#         """)
-#         items = cur.fetchall()
-#         conn.close()
-#         return jsonify(items)
-#     except Exception as e:
-#         return jsonify({'error': str(e)}), 500
 
 
 # ----------------------------------------------------------------------
@@ -821,7 +793,6 @@ def bulk_sales_upload():
         cur = conn.cursor()
 
         # ---- fetch item codes once ----
-        # Ensure we pass native Python ints to the DB driver (avoid numpy types)
         raw_ids = df['item_id'].astype(int).unique()
         item_ids = tuple(int(x) for x in raw_ids)
         code_map = {}
@@ -988,7 +959,6 @@ def predict_sales(item_id):
 
         # REAL PREDICTION
         df = pd.DataFrame(rows)
-        # Ensure numeric operations use floats (MySQL may return Decimal)
         if 'quantity' in df.columns:
             df['quantity'] = df['quantity'].astype(float)
         df['date'] = pd.to_datetime(df[['year', 'month']].assign(day=1))
@@ -1183,9 +1153,9 @@ def get_dead_stock():
 def get_weather_cached(city, timestamp=None):
     """Fetch weather from Open-Meteo."""
     try:
-        # Coordinates for city (hardcode for Colombo; expand later)
+        # Coordinates for city
         coords = {
-            'Colombo': {'lat': 6.931970, 'lon': 79.857750},  # Sri Lanka
+            'Colombo': {'lat': 6.931970, 'lon': 79.857750},
             'Horana': {'lat': 6.714360, 'lon': 80.0520},
             'Padukka': {'lat': 6.843120, 'lon': 80.091346},
         }
@@ -1195,7 +1165,7 @@ def get_weather_cached(city, timestamp=None):
         
         lat, lon = coords[city].values()
         
-        # Open-Meteo API URL (free, 7-day forecast)
+        # Open-Meteo API URL (7-day forecast)
         url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation_probability,windspeed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Asia/Colombo&forecast_days=7"
         
         response = requests.get(url, timeout=5)
@@ -1218,14 +1188,14 @@ def get_weather_cached(city, timestamp=None):
             }
             daily_forecast.append(day)
 
-        # Backward-compatible summary (today)
+        # Backward-compatible summary
         today = daily_forecast[0] if daily_forecast else {
             'date': None, 'max_temp': None, 'min_temp': None, 'rain_mm': None, 'suggestions': []
         }
 
         return {
             'city': city,
-            'daily': daily_forecast,  # 7-day forecast
+            'daily': daily_forecast,
             'date': today['date'],
             'max_temp': today['max_temp'],
             'min_temp': today['min_temp'],
@@ -1244,7 +1214,7 @@ def get_weather_suggestions(temp, rain):
         suggestions.append("Cool day! Promote hot soups & blankets.")
     if rain > 5:
         suggestions.append("Rainy! Stock up on umbrellas & raincoats (+15%).")
-    return suggestions or ["Nice weather – standard stocking."]
+    return suggestions or ["Nice weather - standard stocking."]
 
 @app.route('/weather', methods=['GET'])
 @jwt_required()
@@ -1486,9 +1456,6 @@ def chat():
 @app.route('/generate_report', methods=['POST'])
 @jwt_required()
 def generate_report():
-    """Generate a professional PDF report with proper table formatting.
-    Expected JSON: { report_type: 'sales'|'inventory', month: 'January'|'All' }
-    """
     try:
         data = request.get_json() or {}
         report_type = data.get('report_type', '').lower()
@@ -1535,17 +1502,13 @@ def api_festivals_upcoming():
     
     # Only fetch next year if we're close to year-end (e.g., after October)
     fetch_next = today.month >= 10
-    
     this_year = fetch_sri_lanka_holidays(current_year)
     next_year = fetch_sri_lanka_holidays(current_year + 1) if fetch_next else []
-    
     all_events = this_year + next_year
-    
     upcoming = [
         ev for ev in all_events
         if datetime.fromisoformat(ev["date"]).date() >= today
     ]
-    
     upcoming.sort(key=lambda x: x["date"])
     return jsonify(upcoming[:10])
 

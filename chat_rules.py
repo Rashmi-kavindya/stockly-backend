@@ -1,17 +1,3 @@
-"""
-Chat Rules & Natural Language Query Handler for Stockly
-
-This module handles natural language queries from users and converts them
-into SQL queries using the database schema rules defined in the database.
-
-Rules:
-- Detect user intent from keywords
-- Map intent to appropriate SQL query
-- Execute query and format response
-- Handle edge cases gracefully
-- Support NLP preprocessing for better accuracy
-"""
-
 import mysql.connector
 from datetime import datetime, timedelta
 import re
@@ -22,10 +8,6 @@ class ChatRulesEngine:
     """Process natural language queries and execute relevant SQL."""
     
     def __init__(self, db_connection_func):
-        """
-        Args:
-            db_connection_func: Function that returns a DB connection
-        """
         self.get_db_connection = db_connection_func
     
     # ====================================================================
@@ -33,13 +15,6 @@ class ChatRulesEngine:
     # ====================================================================
     
     def preprocess_query(self, query):
-        """
-        Preprocess input query for better NLP analysis.
-        - Remove extra whitespace
-        - Convert to lowercase
-        - Remove punctuation
-        - Tokenize
-        """
         if not query:
             return []
         
@@ -54,15 +29,13 @@ class ChatRulesEngine:
         
         # Tokenize (split into words)
         tokens = query_clean.split()
-        
         return tokens
-    
+
     def check_greeting(self, query):
         """Check if query is a greeting."""
         greetings = ['hello', 'hi', 'hey', 'greetings', 'howdy', 'good morning', 
                     'good afternoon', 'good evening', 'whats up', 'what\'s up']
         query_lower = query.lower()
-        
         for greeting in greetings:
             if greeting in query_lower:
                 responses = [
@@ -71,15 +44,13 @@ class ChatRulesEngine:
                     "👋 Hey! Ask me about inventory, sales, goals, or dead stock analysis."
                 ]
                 return responses[hash(query) % len(responses)]
-        
         return None
-    
+
     def check_gratitude(self, query):
         """Check if query contains gratitude."""
         gratitude_words = ['thank', 'thanks', 'appreciate', 'grateful', 'thank you',
                           'thankyou', 'much appreciated', 'awesome', 'great job']
         query_lower = query.lower()
-        
         for word in gratitude_words:
             if word in query_lower:
                 responses = [
@@ -88,15 +59,13 @@ class ChatRulesEngine:
                     "😊 Glad I could help! Let me know if you need anything else."
                 ]
                 return responses[hash(query) % len(responses)]
-        
         return None
-    
+
     def check_help_request(self, query):
         """Check if user is requesting help."""
         help_words = ['help', 'assist', 'support', 'how do i', 'how can i', 
                      'what can', 'guide', 'tutorial', 'feature']
         query_lower = query.lower()
-        
         for word in help_words:
             if word in query_lower:
                 help_text = """
@@ -134,9 +103,8 @@ I can help you with:
 - Email: support@stockly.com
 
 Just ask naturally! 😊
-                """
+"""
                 return help_text
-        
         return None
     
     # ====================================================================
@@ -179,7 +147,6 @@ Just ask naturally! 😊
         if any(word in query_lower for word in ['dead stock', 'slow moving', 'slowmoving', 
                                                    'no sales', 'stagnant', 'inactive']):
             return 'dead_stock'
-        
         return 'general'
     
     # ====================================================================
@@ -190,7 +157,6 @@ Just ask naturally! 😊
         """Extract item name from query and find matching item_id."""
         conn = None
         cur = None
-        
         try:
             conn = self.get_db_connection()
             cur = conn.cursor(dictionary=True)
@@ -232,7 +198,6 @@ Just ask naturally! 😊
                     result = cur.fetchone()
                     if result:
                         return result
-        
         except Exception as e:
             # Log the error but don't crash - return None and let caller handle it
             print(f"Database error in find_item_by_name: {str(e)}")
@@ -242,7 +207,6 @@ Just ask naturally! 😊
                 cur.close()
             if conn:
                 conn.close()
-        
         return None
     
     # ====================================================================
@@ -253,7 +217,6 @@ Just ask naturally! 😊
         """Handle sales-related queries."""
         conn = None
         cur = None
-        
         try:
             conn = self.get_db_connection()
             cur = conn.cursor(dictionary=True)
@@ -316,16 +279,13 @@ Just ask naturally! 😊
                     )
                 else:
                     response = f"No sales data for {target_month}/{target_year}."
-        
         except Exception as e:
             response = f"Error retrieving sales data: {str(e)}"
-        
         finally:
             if cur:
                 cur.close()
             if conn:
                 conn.close()
-        
         return response
     
     # ====================================================================
@@ -336,7 +296,6 @@ Just ask naturally! 😊
         """Handle inventory/stock queries."""
         conn = None
         cur = None
-        
         try:
             conn = self.get_db_connection()
             cur = conn.cursor(dictionary=True)
@@ -362,7 +321,6 @@ Just ask naturally! 😊
                     status = "✅ **ADEQUATE**"
                 
                 response = f"{status} - **{item['item_name']}**\n  Stock: **{stock} units**\n  Reorder Level: **{reorder} units**"
-            
             else:
                 cur.execute("""
                     SELECT i.item_name, COALESCE(SUM(ib.stock_quantity), 0) as stock, i.reorder_level
@@ -380,16 +338,13 @@ Just ask naturally! 😊
                     )
                 else:
                     response = "❌ No inventory data available."
-        
         except Exception as e:
             response = f"❌ Error retrieving stock data: {str(e)}"
-        
         finally:
             if cur:
                 cur.close()
             if conn:
                 conn.close()
-        
         return response
     
     # ====================================================================
@@ -400,7 +355,6 @@ Just ask naturally! 😊
         """Handle expiry/near-expiry queries."""
         conn = None
         cur = None
-        
         try:
             conn = self.get_db_connection()
             cur = conn.cursor(dictionary=True)
@@ -411,8 +365,6 @@ Just ask naturally! 😊
                 days = 14
             elif '60' in query:
                 days = 60
-            
-            # Fixed: GROUP BY must include all non-aggregated columns to comply with ONLY_FULL_GROUP_BY
             cur.execute("""
                 SELECT i.item_name, ib.expire_date, SUM(ib.stock_quantity) as stock
                 FROM inventory_batches ib
@@ -431,16 +383,13 @@ Just ask naturally! 😊
                 )
             else:
                 response = f"✅ **Good news!** No items expiring in the next {days} days."
-        
         except Exception as e:
             response = f"❌ Error retrieving expiry data: {str(e)}"
-        
         finally:
             if cur:
                 cur.close()
             if conn:
                 conn.close()
-        
         return response
     
     # ====================================================================
@@ -451,7 +400,6 @@ Just ask naturally! 😊
         """Handle goal/target queries."""
         conn = None
         cur = None
-        
         try:
             conn = self.get_db_connection()
             cur = conn.cursor(dictionary=True)
@@ -483,16 +431,13 @@ Just ask naturally! 😊
                     ])
                 else:
                     response = "📭 You have no active goals yet. Set a goal to track your sales targets!"
-        
         except Exception as e:
             response = f"❌ Error retrieving goals: {str(e)}"
-        
         finally:
             if cur:
                 cur.close()
             if conn:
                 conn.close()
-        
         return response
     
     # ====================================================================
@@ -503,7 +448,6 @@ Just ask naturally! 😊
         """Handle dead stock (slow-moving items) queries."""
         conn = None
         cur = None
-        
         try:
             conn = self.get_db_connection()
             cur = conn.cursor(dictionary=True)
@@ -528,16 +472,13 @@ Just ask naturally! 😊
                 ])
             else:
                 response = "✅ **Excellent!** No dead stock detected. All items are moving well."
-        
         except Exception as e:
             response = f"❌ Error retrieving dead stock data: {str(e)}"
-        
         finally:
             if cur:
                 cur.close()
             if conn:
                 conn.close()
-        
         return response
 
     # ====================================================================
@@ -545,10 +486,6 @@ Just ask naturally! 😊
     # ====================================================================
 
     def handle_report_query(self, query, user_id=None):
-        """Return a structured prompt describing available report types and months.
-
-        This returns a dict so the frontend can render a form/buttons.
-        """
         months = [
             'January', 'February', 'March', 'April', 'May', 'June',
             'July', 'August', 'September', 'October', 'November', 'December', 'All'
@@ -577,16 +514,6 @@ Just ask naturally! 😊
     # ====================================================================
     
     def process_query(self, query, user_id=None):
-        """
-        Main entry point: Process natural language query intelligently.
-        
-        Args:
-            query (str): User's natural language query
-            user_id (int): Optional user ID for personalized responses
-        
-        Returns:
-            str: Formatted response ready for API return
-        """
         if not query or not query.strip():
             return "❓ Please ask me something! Type 'help' for options."
         

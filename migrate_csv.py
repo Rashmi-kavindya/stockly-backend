@@ -24,20 +24,20 @@ print(f"Loaded {len(df)} rows in {time.time() - start_time:.2f}s.")
 if 'year' not in df.columns:
     df['year'] = 2024
 
-# Optimized Mapping: Fetch ALL items once into a dict (faster than looping queries)
+# Optimized Mapping: Fetch ALL items once into a dict wich is faster than looping queries
 print("Fetching all items for mapping...")
 all_items = pd.read_sql("SELECT item_id, item_name FROM items", engine)
-item_mapping = dict(zip(all_items['item_name'].str.strip().str.lower(), all_items['item_id']))  # Lowercase for fuzzy match if needed
+item_mapping = dict(zip(all_items['item_name'].str.strip().str.lower(), all_items['item_id']))
 print(f"Mapped {len(item_mapping)} unique items from DB.")
 
 # Apply mapping to DF
 print("Applying mapping...")
-df['item_name_lower'] = df['ITEM NAME'].str.strip().str.lower()  # Normalize for matching
+df['item_name_lower'] = df['ITEM NAME'].str.strip().str.lower()
 df_mapped = df[df['item_name_lower'].isin(item_mapping.keys())].copy()
 df_mapped['item_id'] = df_mapped['item_name_lower'].map(item_mapping)
-df_mapped.drop('item_name_lower', axis=1, inplace=True)  # Cleanup
+df_mapped.drop('item_name_lower', axis=1, inplace=True)
 
-# Prepare columns (adjust if CSV names differ, e.g., add df['month'] = 1 if missing)
+# Prepare columns (adjust if CSV names differ)
 df_mapped['record_date'] = pd.to_datetime('today').date()
 df_mapped = df_mapped[['item_id', 'MONTH', 'year', 'QUANTITY', 'RANK', 'CODE', 'record_date']].rename(columns={
     'QUANTITY': 'quantity_sold',
@@ -63,7 +63,7 @@ for i in range(0, len(df_mapped), chunk_size):
         time.sleep(0.1)  # Prevent DB overload
     except Exception as e:
         print(f"Error in chunk {(i // chunk_size) + 1}: {e}")
-        # Optional: Save failed chunk to CSV for retry
+        # Save failed chunk to CSV for retry
         chunk.to_csv(f'failed_chunk_{i}.csv', index=False)
         break
 
@@ -71,7 +71,6 @@ for i in range(0, len(df_mapped), chunk_size):
 final_count = pd.read_sql('SELECT COUNT(*) as count FROM sales_history', engine)['count'].iloc[0]
 print(f"Migration complete in {time.time() - start_time:.2f}s! Total rows in DB: {final_count}")
 
-# Sample output
 print("\nSample data from sales_history:")
 sample = pd.read_sql('SELECT * FROM sales_history LIMIT 5', engine)
 print(sample)

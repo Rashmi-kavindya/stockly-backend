@@ -1,8 +1,3 @@
-"""
-Report generation module for Stockly.
-Handles PDF creation with proper table formatting for sales and inventory reports.
-"""
-
 from datetime import datetime
 from io import BytesIO
 from reportlab.pdfgen import canvas
@@ -16,22 +11,22 @@ import mysql.connector
 
 THEMES = {
     "sales": {
-        "primary": colors.HexColor("#E87E2C"),      # header bar
-        "primary_dark": colors.HexColor("#BC5D15"), # titles
+        "primary": colors.HexColor("#E87E2C"),
+        "primary_dark": colors.HexColor("#BC5D15"),
     },
     "inventory": {
-        "primary": colors.HexColor("#EFA56C"),      # header bar
-        "primary_dark": colors.HexColor("#934910"), # titles
+        "primary": colors.HexColor("#EFA56C"),
+        "primary_dark": colors.HexColor("#934910"),
     },
     "all_months": {
-        "primary": colors.HexColor("#EA8B43"),      # header bar
-        "primary_dark": colors.HexColor("#BC5D15"), # titles
+        "primary": colors.HexColor("#EA8B43"),
+        "primary_dark": colors.HexColor("#BC5D15"),
     },
     "table": {
-        "accent": colors.HexColor("#D1D5DB"),       # grid
-        "row_light": colors.white,                  # stripe 1
-        "row_alt": colors.HexColor("#F3F4F6"),      # stripe 2
-        "total_bg": colors.HexColor("#E5E7EB"),     # totals row
+        "accent": colors.HexColor("#D1D5DB"),
+        "row_light": colors.white,
+        "row_alt": colors.HexColor("#F3F4F6"),
+        "total_bg": colors.HexColor("#E5E7EB"),
     },
 }
 
@@ -40,24 +35,9 @@ class ReportGenerator:
     """Generate PDF reports for sales and inventory data."""
 
     def __init__(self, db_connection_func):
-        """
-        Args:
-            db_connection_func: Function that returns a DB connection
-        """
         self.get_db_connection = db_connection_func
 
     def get_year_for_month(self, month_str):
-        """
-        Determine the year for a given month.
-        If month is in the past (relative to current date), use previous year.
-        If month is current or future, use current year.
-        
-        Args:
-            month_str: Month name or "All" for all months
-            
-        Returns:
-            tuple: (month_number, year) or (None, None) for "All"
-        """
         if month_str.lower() == 'all':
             return None, None
 
@@ -75,23 +55,12 @@ class ReportGenerator:
         current_month = now.month
         current_year = now.year
 
-        # Use current year by default. If you need previous years, pass a year explicitly
-        # from the UI or extend this method to parse a year from input.
+        # Use current year by default.
         year = current_year
 
         return month_num, year
 
     def generate_sales_report(self, month_str, username):
-        """
-        Generate sales report PDF.
-        
-        Args:
-            month_str: Month name or "All"
-            username: Username for logging
-            
-        Returns:
-            BytesIO: PDF buffer
-        """
         conn = self.get_db_connection()
         cur = conn.cursor(dictionary=True)
 
@@ -226,16 +195,6 @@ class ReportGenerator:
         return buffer
 
     def generate_inventory_report(self, month_str, username):
-        """
-        Generate inventory report PDF (current inventory based on expire_date).
-        
-        Args:
-            month_str: Month name (determines context year)
-            username: Username for logging
-            
-        Returns:
-            BytesIO: PDF buffer
-        """
         conn = self.get_db_connection()
         cur = conn.cursor(dictionary=True)
 

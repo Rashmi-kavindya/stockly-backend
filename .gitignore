@@ -9,3 +9,4 @@ __pycache__/
 venv/
 
 script.py
+migrate_csv.py

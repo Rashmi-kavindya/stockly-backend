@@ -37,7 +37,6 @@ Backend API for the Stockly smart inventory management system.
 - `GROQ_MODEL` optional, if you want to change the model name
 
 ## Main API Endpoints
-- `/`
 - `/login`
 - `/register`
 - `/users`

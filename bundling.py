@@ -1,9 +1,6 @@
-"""
-Bundling helpers for near-expiry and dead-stock recommendations.
-"""
+# Bundling helpers for near-expiry and dead-stock recommendations.
 
 from typing import Dict, List, Tuple
-
 
 def get_top_sellers_by_department(conn, months_back: int = 3, limit: int = 3) -> Dict[str, List[str]]:
     """Return top-selling item names per department for recent months."""
